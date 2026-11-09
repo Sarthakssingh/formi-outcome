@@ -2,3 +2,14 @@ runs/
 __pycache__/
 *.pyc
 .venv/
+venv/
+
+# Local runtime artifacts
+*.db
+*.sqlite3
+runs/
+reports/*.md.tmp
+
+# OS
+.DS_Store
+EOF
