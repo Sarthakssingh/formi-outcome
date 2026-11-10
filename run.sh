@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
-# Replace this with your controller. Contract: ./run.sh <SIM_URL> runs until the scenario finishes.
+# Runs on plain Python 3.10+ (deps in requirements.txt). No Docker needed.
+# State is kept in controller.db, so a restart after a crash resumes where it stopped.
 set -euo pipefail
+cd "$(dirname "$0")"
 SIM_URL="${1:?usage: ./run.sh <SIM_URL>}"
-
 export SIMULATOR_URL="$SIM_URL"
-export PYTHONUTF8=1
-export PYTHONUNBUFFERED=1
-
+export CONTROLLER_DB="${CONTROLLER_DB:-controller.db}"
 exec python -m controller.main

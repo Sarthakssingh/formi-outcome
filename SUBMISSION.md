@@ -1,6 +1,6 @@
 # Outcome-First Agent Loop — Submission
 
-**Name:** [TODO] · **Date:** 2026-11-11 · **Hours actually spent (be honest):** [TODO] · **Language / storage:** Python 3 + SQLite (single file)
+**Name:** Sarthak SIkriwal · **Date:** 2026-11-11 · **Hours actually spent (be honest):** 16 · **Language / storage:** Python 3 + SQLite (single file)
 
 ---
 
@@ -65,7 +65,7 @@
 - **Accepted:** kill/restart test (done, §9); idempotency (ingest keyed by `event_id`; deterministic proposal ids); no new stateful infrastructure (one SQLite file; production would use the existing Postgres).
 - **Not delivered:** loop health metrics (C14); paging rules. No alert currently pages anyone — alerts go to the audit table only.
 - **Wrong claims:** none found.
-- **Reply:** "Kabir — kill/restart is demonstrated: killed twice mid-run, the final state matched an uninterrupted run exactly. Ingest is idempotent by event id and changes use deterministic proposal ids, so a restart can't apply anything twice. State is a single SQLite file, no new infrastructure; I'd move it to your Postgres. Load: [TODO: measured seconds per simulated day]. Known gap: events, metrics and cursor are written in separate transactions; I'd merge them first. No alert should page yet."
+- **Reply:** "Kabir — kill/restart is demonstrated: killed twice mid-run, the final state matched an uninterrupted run exactly. Ingest is idempotent by event id and changes use deterministic proposal ids, so a restart can't apply anything twice. State is a single SQLite file, no new infrastructure; I'd move it to your Postgres. Load: about 56 seconds per simulated day on public_03 (8 CPUs, 8 GB), against your 10-minute target; the database grew to 2.5 GB over 5 days. Known gap: events, metrics and cursor are written in separate transactions; I'd merge them first. No alert should page yet."
 
 ### 04 — Anita Desai, Operations Supervisor (Kestrel)
 - **Accepted:** her prompt edits are never undone — the controller never changes `prompt_version` itself and always builds a change from the *live* config with `base_version`. Her "one screen" is not built; `SUPERVISOR_NOTICE` rows are what it would show. Her lesson (a "safe" prompt that kills engagement) is why validation, which only measures safety, must be followed by an engagement check after any prompt change.
@@ -132,7 +132,7 @@ Timeline (simulated time):
 
 | When | What | Controller |
 |---|---|---|
-| D2 10:00 | `ks_cancel` caller ID D2 flagged: pickup ~25% → ~10% | Detected; 3 auto-applied steps (D2 share 50% → ~31% → ~12% → 5%) [TODO: confirm exact times with the §10 query] |
+| D2 10:00 | `ks_cancel` caller ID D2 flagged: pickup ~25% → ~10% | Detected; 3 auto-applied steps (D2 share 50% → ~31% → ~12% → 5%) All three applied in the 11:00 hour on D2 (see §10). |
 | D2–D9 | D2 share of calls | 14.9% on D2, then 5% every day after |
 | D3 11:30 | Supervisor edits `ks_cancel` prompt to P2 ("adds payment-urgency language and benefit claims") | Hallucination alerts fire; **no fix applied** (`mttr_minutes: null`) |
 | D5 15:00 | Supervisor edit on `nw_renewal` | Not handled |
@@ -144,10 +144,10 @@ Timeline (simulated time):
 
 ## 8. Scale
 
-- **Measured on public_03_load** (5 simulated days; machine: [TODO CPUs / RAM]): total wall time **280 s**, i.e. about **56 s per simulated day** against the 10-minute target; the SQLite file grew to **2.55 GB** (about 510 MB per simulated day); events ingested: [TODO raw_events count] (about [TODO] events/sec); peak memory: [TODO, or "not measured"].
+- **Measured on public_03_load** (5 simulated days; 8 logical CPUs, 8 GB RAM; the simulator ran on the same machine; the controller is a single process, so it uses about one core): total wall time **280 s**, about **56 s per simulated day** against the 10-minute target. Events ingested: **4,200,060** (about 15,000 events/sec). The SQLite file grew to **2.55 GB** (about 510 MB per simulated day, about 600 bytes per event). Peak memory: not measured. Under load the controller made **0** config changes and wrote **2** detection alerts.
 - The wall time includes the simulator generating each tick, so the controller's own cost is lower.
-- **What breaks first at 10×:** storage and write time. The file would grow about 5 GB per simulated day, and by linear extrapolation (not measured) a day would take about 9–10 minutes, right at the limit, because every event is written one row at a time and stored as full JSON.
-- **How I'd scale it:** batched inserts and compact columns instead of full JSON first; then one worker process per workflow or tenant, each with its own cursor; Postgres in place of SQLite.
+- **What breaks first at 10×:** storage and write time. By linear extrapolation (not measured) a day would take about 9–10 minutes and grow the file by about 5 GB, because every event is written one row at a time as full JSON.
+- **How I'd scale it:** batched inserts and compact columns first; then one worker process per workflow or tenant, each with its own cursor; Postgres in place of SQLite.
 
 ## 9. Reliability
 
@@ -172,7 +172,22 @@ WHERE workflow_id = 'ks_cancel'
 ORDER BY occurred_at;
 ```
 
-[TODO: paste your real output here.]
+Output on public_02 (`sim_time` is the simulated hour of the latest data when the change was applied; alert rows carry no simulated time, only wall-clock order):
+
+```
+(None, 'DETECTION_ALERT', 'pickup_degradation', None, None)
+('2027-01-06T11:00:00+05:30', 'CONFIG_AUTO_APPLIED', 'caller_id', '{"D2":{"dials":472,"pickup":0.1589,"siblings_dials":428,"siblings_pickup":0.2617,"z":3.8}}', '{"D1":0.69,"D2":0.31}')
+(None, 'SUPERVISOR_NOTICE', 'caller_id', None, None)
+('2027-01-06T11:00:00+05:30', 'CONFIG_AUTO_APPLIED', 'caller_id', '{"D2":{"dials":499,"pickup":0.1563,"siblings_dials":501,"siblings_pickup":0.2595,"z":4.02}}', '{"D1":0.88,"D2":0.12}')
+(None, 'SUPERVISOR_NOTICE', 'caller_id', None, None)
+('2027-01-06T11:00:00+05:30', 'CONFIG_AUTO_APPLIED', 'caller_id', '{"D2":{"dials":511,"pickup":0.1546,"siblings_dials":589,"siblings_pickup":0.2581,"z":4.2}}', '{"D1":0.95,"D2":0.05}')
+(None, 'SUPERVISOR_NOTICE', 'caller_id', None, None)
+(None, 'DETECTION_ALERT', 'high_hallucination_rate', None, None)
+(None, 'DETECTION_ALERT', 'pickup_degradation', None, None)
+(None, 'DETECTION_ALERT', 'engagement_degradation', None, None)
+```
+
+Reading it: caller ID D2 had about 16% pickup against about 26% for the other ID (z between 3.8 and 4.2), so its share of traffic was cut 50% → 31% → 12% → 5% in three steps of at most 20 points each (Kestrel's `max_shift`). The alerts after the fixes were recorded but not acted on. Gap: detection alerts are not stamped with simulated time.
 
 - Each applied change records the before/after weights, the evidence (pickup of the bad ID vs the others, z, dials) and the proposal id. The simulator's `config_changed` event in `raw_events` carries the same proposal id, which links the change to its reason.
 - **IRDAI question (what did a given customer hear?):** each call event stores `config_version`, `cohort_id` and the variant; join to the config history for the version. Not built as a single query.
