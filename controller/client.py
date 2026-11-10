@@ -48,3 +48,11 @@ class SimulatorClient:
         )
         response.raise_for_status()
         return response.json()
+
+    def put_config(self, workflow_id: str, body: dict) -> tuple[int, dict]:
+       response = self._client.put(f"/workflows/{workflow_id}/config", json=body)
+       try:
+           payload = response.json()
+       except Exception:
+           payload = {"raw": response.text[:300]}
+       return response.status_code, payload

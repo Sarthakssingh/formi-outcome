@@ -9,6 +9,7 @@ from .metrics import update_metrics
 from .settings import load_settings
 from .detectors import detect_workflow_issues, sim_now
 from .audit import record_audit
+from . import caller_id
 
 LAST_ALERT = {}                  # (workflow, alert type) -> simulated time of last alert
 COOLDOWN = timedelta(hours=6)
@@ -56,6 +57,7 @@ def ingest_available(client, connection, last_event_id, last_chunk):
 def main() -> None:
     settings = load_settings()
     client = SimulatorClient(settings.simulator_url, settings.request_timeout_seconds)
+    workflows = {w["workflow_id"]: w for w in client.workflows()}
     connection = connect(settings.db_path)
     last_event_id, last_chunk = load_cursor(connection)
 
@@ -78,6 +80,7 @@ def main() -> None:
     while True:
         # catch up first (covers a crash between advance and ingest, and an already-finished world)
         last_event_id, last_chunk = ingest_available(client, connection, last_event_id, last_chunk)
+        caller_id.run(client, connection, workflows)
         if client.state().get("finished"):
             print("Simulation finished.")
             break
